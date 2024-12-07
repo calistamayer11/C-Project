@@ -52,7 +52,8 @@ int ECElevatorSim::GetCurrTime()
 };
 void Stopped::onTimeTick()
 {
-    getActiveRequests();
+    // const auto &activeRequests = elevatorSim.getActiveRequests();
+    getActiveRequests(); // Update activeRequests
 
     std::ostringstream oss;
     oss << "Time: " << elevatorSim.GetCurrTime()
@@ -60,10 +61,14 @@ void Stopped::onTimeTick()
         << ", Direction: " << (elevatorSim.GetCurrDir() == EC_ELEVATOR_UP ? "UP" : (elevatorSim.GetCurrDir() == EC_ELEVATOR_DOWN ? "DOWN" : "STOPPED"))
         << ", State: STOPPED, Requests: ";
 
-    for (const auto &request : activeRequests)
+    for (auto &request : activeRequests)
     {
-        oss << "[Src: " << request.GetFloorSrc()
-            << ", Dest: " << request.GetFloorDest() << "] ";
+        // Dereference the request to access the actual object
+        ECElevatorSimRequest &req = request.get();
+
+        // Now you can access and modify `req` directly
+        oss << "[Src: " << req.GetFloorSrc()
+            << ", Dest: " << req.GetFloorDest() << "] ";
     }
 
     elevatorSim.history.push_back(oss.str());
@@ -73,9 +78,12 @@ void Stopped::onTimeTick()
 
     if (!activeRequests.empty())
     {
-        for (const auto &request : activeRequests)
+        for (auto &request : activeRequests)
         {
-            int targetFloor = request.GetRequestedFloor();
+            // Dereference the request to access the actual object
+            ECElevatorSimRequest &req = request.get();
+
+            int targetFloor = req.GetRequestedFloor();
             if (closestFloor == -1 || std::abs(targetFloor - elevatorSim.GetCurrFloor()) < std::abs(closestFloor - elevatorSim.GetCurrFloor()))
             {
                 closestFloor = targetFloor;
@@ -87,291 +95,112 @@ void Stopped::onTimeTick()
         }
     }
 }
+
 void Loading::onTimeTick()
 {
+    // Fetch active requests
     getActiveRequests();
+
+    // Iterate through each active request
     for (auto &request : activeRequests)
     {
-        if (request.GetRequestedFloor() == elevatorSim.GetCurrFloor()) // Is the request to enter here?
+        // Dereference to access the actual request
+        ECElevatorSimRequest &req = request.get();
+
+        // Passenger boarding condition: if the request is to enter here (on the current floor)
+        if (req.GetRequestedFloor() == elevatorSim.GetCurrFloor() && !req.IsFloorRequestDone()) // Only board if not yet boarded
         {
-            // Let the passenger on and record the time
-            request.SetArriveTime(elevatorSim.GetCurrTime());
-            request.SetFloorRequestDone(true);
+            // Let the passenger board and record the time
+            req.SetArriveTime(elevatorSim.GetCurrTime()); // Record the time passenger boards
+            req.SetFloorRequestDone(true);                // Mark floor request as done (passenger is on board)
+
+            // Log the boarding event
             std::ostringstream oss;
             oss << "Passenger boards at floor " << elevatorSim.GetCurrFloor()
-                << " - Request Src: " << request.GetFloorSrc() << ", Dest: " << request.GetFloorDest();
+                << " - Request Src: " << req.GetFloorSrc() << ", Dest: " << req.GetFloorDest();
             elevatorSim.history.push_back(oss.str());
-            int targetFloor = request.GetRequestedFloor();
-            int closestFloor = -1;
-            EC_ELEVATOR_DIR move = EC_ELEVATOR_STOPPED;
-            if (closestFloor == -1 || std::abs(targetFloor - elevatorSim.GetCurrFloor()) < std::abs(closestFloor - elevatorSim.GetCurrFloor()))
-            {
-                closestFloor = targetFloor;
-                move = targetFloor > elevatorSim.GetCurrFloor() ? EC_ELEVATOR_UP : EC_ELEVATOR_DOWN;
-                elevatorSim.SetCurrDir(move);
-                elevatorSim.transitionToState(ELEVATOR_MOVE);
-                break;
-            }
+
+            // Determine the next target floor and direction
+            int targetFloor = req.GetRequestedFloor();
+            EC_ELEVATOR_DIR move = targetFloor > elevatorSim.GetCurrFloor() ? EC_ELEVATOR_UP : EC_ELEVATOR_DOWN;
+            elevatorSim.SetCurrDir(move);
+
+            // Transition to moving state
+            elevatorSim.transitionToState(ELEVATOR_MOVE);
+            break; // Break after processing this request to move to the next one (if any)
         }
-        else if (request.GetFloorDest() == elevatorSim.GetCurrFloor()) // Is the request to exit here?
+
+        // Passenger exiting condition: if the request is to exit here (on the current floor)
+        else if (req.GetFloorDest() == elevatorSim.GetCurrFloor() && req.IsFloorRequestDone() && !req.IsServiced())
         {
-            request.SetArriveTime(elevatorSim.GetCurrTime());
-            request.SetServiced(true); // Mark request as completed
+            // Mark the passenger as serviced (they have reached their destination)
+            req.SetArriveTime(elevatorSim.GetCurrTime()); // Record the time they exit
+            req.SetServiced(true);                        // Mark request as completed
+
+            // Log the exiting event
             std::ostringstream oss;
             oss << "Passenger exits at floor " << elevatorSim.GetCurrFloor()
-                << " - Request Src: " << request.GetFloorSrc() << ", Dest: " << "Time: " << elevatorSim.GetCurrTime()
-                << ", Floor: " << elevatorSim.GetCurrFloor() << request.GetFloorDest();
+                << " - Request Src: " << req.GetFloorSrc() << ", Dest: " << req.GetFloorDest()
+                << ", Time: " << elevatorSim.GetCurrTime() << ", Floor: " << elevatorSim.GetCurrFloor();
             elevatorSim.history.push_back(oss.str());
-            int targetFloor = request.GetRequestedFloor();
-            int closestFloor = -1;
-            EC_ELEVATOR_DIR move = EC_ELEVATOR_STOPPED;
-            if (closestFloor == -1 || std::abs(targetFloor - elevatorSim.GetCurrFloor()) < std::abs(closestFloor - elevatorSim.GetCurrFloor()))
-            {
-                closestFloor = targetFloor;
-                move = targetFloor > elevatorSim.GetCurrFloor() ? EC_ELEVATOR_UP : EC_ELEVATOR_DOWN;
-                elevatorSim.SetCurrDir(move);
-                elevatorSim.transitionToState(ELEVATOR_MOVE);
-                break;
-            }
+
+            // Transition to moving state
+            int targetFloor = req.GetRequestedFloor();
+            EC_ELEVATOR_DIR move = targetFloor > elevatorSim.GetCurrFloor() ? EC_ELEVATOR_UP : EC_ELEVATOR_DOWN;
+            elevatorSim.SetCurrDir(move);
+
+            // Move to the next request (after servicing this one)
+            elevatorSim.transitionToState(ELEVATOR_MOVE);
+            break; // Stop further processing for this tick, transition happens
         }
     }
 }
+
 void Moving::onTimeTick()
 {
     int currentFloor = elevatorSim.GetCurrFloor();
     EC_ELEVATOR_DIR currentDir = elevatorSim.GetCurrDir();
     bool transitionToLoading = false;
 
+    // Fetch the active requests
     getActiveRequests();
 
+    // Iterate through each active request
     for (auto &request : activeRequests)
     {
-        int requestedFloor = request.GetRequestedFloor();
-        if (requestedFloor == currentFloor && !request.IsFloorRequestDone())
+        // Dereference to access the actual request
+        ECElevatorSimRequest &req = request.get();
+
+        int requestedFloor = req.GetRequestedFloor();
+
+        // If the request is at the current floor and not yet boarded, transition to loading state
+        if (requestedFloor == currentFloor && !req.IsFloorRequestDone())
         {
             elevatorSim.transitionToState(ELEVATOR_LOAD);
             transitionToLoading = true;
-            break;
+            break; // Exit the loop once a request is processed
         }
     }
 
+    // If no request was processed, continue moving the elevator
     if (!transitionToLoading)
     {
         if (currentDir == EC_ELEVATOR_UP)
         {
-            elevatorSim.SetCurrFloor(currentFloor + 1); // move up
+            elevatorSim.SetCurrFloor(currentFloor + 1); // Move up
         }
         else if (currentDir == EC_ELEVATOR_DOWN)
         {
-            elevatorSim.SetCurrFloor(currentFloor - 1); // move down
+            elevatorSim.SetCurrFloor(currentFloor - 1); // Move down
         }
     }
 
+    // Log the elevator's state (time, floor, direction)
     std::ostringstream oss;
     oss << "Time: " << elevatorSim.GetCurrTime()
         << ", Floor: " << elevatorSim.GetCurrFloor()
         << ", Direction: " << (currentDir == EC_ELEVATOR_UP ? "Moving UP" : (currentDir == EC_ELEVATOR_DOWN ? "Moving DOWN" : "STOPPED"));
     elevatorSim.history.push_back(oss.str());
-}
-
-// void Stopped::onTimeTick()
-// {
-//     getActiveRequests();
-
-//     std::ostringstream oss;
-//     oss << "Time: " << elevatorSim.GetCurrTime()
-//         << ", Floor: " << elevatorSim.GetCurrFloor()
-//         << ", Direction: " << (elevatorSim.GetCurrDir() == EC_ELEVATOR_UP ? "UP" : (elevatorSim.GetCurrDir() == EC_ELEVATOR_DOWN ? "DOWN" : "STOPPED"))
-//         << ", State: STOPPED, Requests: ";
-
-//     // Append requests to the log
-//     for (const auto &request : activeRequests)
-//     {
-//         oss << "[Src: " << request.GetFloorSrc()
-//             << ", Dest: " << request.GetFloorDest() << "] ";
-//     }
-
-//     // Add the log entry to history
-//     elevatorSim.history.push_back(oss.str());
-
-//     // go through the active requests and find the floor that should be serviced next
-//     int closestFloor = -1;
-//     EC_ELEVATOR_DIR move = EC_ELEVATOR_STOPPED;
-
-//     if (!activeRequests.empty()) // go through the active requests and find the next floor.
-//     {
-//         // set to the direction of the next request
-//         // iterate over active requests to find the closest floor
-//         for (const auto &request : activeRequests)
-//         {
-//             int targetFloor = request.GetRequestedFloor();
-//             if (closestFloor == -1 ||
-//                 (std::abs(targetFloor - elevatorSim.GetCurrFloor()) < std::abs(closestFloor - elevatorSim.GetCurrFloor())))
-//             {
-//                 closestFloor = targetFloor;
-//                 move = targetFloor > elevatorSim.GetCurrFloor() ? EC_ELEVATOR_UP : EC_ELEVATOR_DOWN;
-
-//                 // set to the direction of the closest floor
-//                 elevatorSim.SetCurrDir(move);
-
-//                 // transition the elevator to move state
-//                 elevatorSim.transitionToState(ELEVATOR_MOVE);
-//                 // break;
-//             }
-//         }
-//         if (closestFloor != -1)
-//         {
-//             elevatorSim.SetCurrDir(move);
-//             elevatorSim.transitionToState(ELEVATOR_MOVE);
-//         }
-//     }
-// };
-// void Loading::onTimeTick()
-// {
-//     getActiveRequests();
-
-//     // Log current state
-//     std::ostringstream oss;
-//     oss << "Time: " << elevatorSim.GetCurrTime()
-//         << ", Floor: " << elevatorSim.GetCurrFloor()
-//         << ", State: LOADING, Requests: ";
-
-//     // Print request details to debug
-//     for (const auto &request : activeRequests)
-//     {
-//         // Debug print to show which requests are being processed in the loading state
-//         std::cout << "Processing request at floor " << request.GetRequestedFloor()
-//                   << " - Src: " << request.GetFloorSrc()
-//                   << ", Dest: " << request.GetFloorDest()
-//                   << ", FloorRequestDone: " << request.IsFloorRequestDone()
-//                   << ", Serviced: " << request.IsServiced() << std::endl;
-
-//         oss << "[Src: " << request.GetFloorSrc()
-//             << ", Dest: " << request.GetFloorDest() << "] ";
-//     }
-
-//     elevatorSim.history.push_back(oss.str());
-
-//     bool processedRequest = false;
-
-//     for (auto &request : activeRequests)
-//     {
-//         // If we haven't serviced this request yet
-//         if (!request.IsServiced())
-//         {
-//             cout << "FloorRequestDone: " << request.IsFloorRequestDone() << endl;
-//             // Check if this is the floor where the passenger should get on
-//             if (request.GetFloorSrc() == elevatorSim.GetCurrFloor() && !request.IsFloorRequestDone())
-//             {
-//                 // The passenger boards the elevator
-//                 std::cout << "Before: FloorRequestDone: " << request.IsFloorRequestDone()
-//                           << ", Serviced: " << request.IsServiced() << std::endl;
-//                 request.SetFloorRequestDone(true);
-//                 std::cout << "After: FloorRequestDone: " << request.IsFloorRequestDone()
-//                           << ", Serviced: " << request.IsServiced() << std::endl;
-//                 // request.SetFloorRequestDone(true); // passenger is now on the elevator
-
-//                 // Decide the direction based on passenger's destination
-//                 if (request.GetFloorDest() < elevatorSim.GetCurrFloor())
-//                 {
-//                     elevatorSim.SetCurrDir(EC_ELEVATOR_DOWN);
-//                 }
-//                 else if (request.GetFloorDest() > elevatorSim.GetCurrFloor())
-//                 {
-//                     elevatorSim.SetCurrDir(EC_ELEVATOR_UP);
-//                 }
-//                 else
-//                 {
-//                     // If the destination is the same as current floor (unlikely), just service it
-//                     request.SetServiced(true);
-//                 }
-
-//                 // Transition back to moving state now that the passenger is on board
-//                 processedRequest = true;
-//                 request.SetServiced(true); // Mark as serviced
-//                 elevatorSim.transitionToState(ELEVATOR_MOVE);
-//                 break;
-//             }
-//             // Check if this is the floor where the passenger should get off
-//             else if (request.GetFloorDest() == elevatorSim.GetCurrFloor() && request.IsFloorRequestDone() && !request.IsServiced())
-//             {
-//                 // Passenger exits
-//                 request.SetArriveTime(elevatorSim.GetCurrTime());
-//                 request.SetServiced(true);
-
-//                 std::cout << "Passenger exits at floor " << elevatorSim.GetCurrFloor()
-//                           << " - FloorRequestDone: " << request.IsFloorRequestDone()
-//                           << ", Serviced: " << request.IsServiced() << std::endl;
-
-//                 processedRequest = true;
-//                 break;
-//             }
-//         }
-//     }
-
-//     // If no request was processed at this floor, just resume moving
-//     if (!processedRequest)
-//     {
-//         std::cout << "No requests processed at this floor, resuming movement." << std::endl;
-//         elevatorSim.transitionToState(ELEVATOR_MOVE);
-//     }
-// }
-
-// void Moving::onTimeTick()
-// {
-//     getActiveRequests();
-//     int currentFloor = elevatorSim.GetCurrFloor();
-//     EC_ELEVATOR_DIR currentDir = elevatorSim.GetCurrDir();
-//     bool foundRequestToLoad = false;
-
-//     // Check if there's a request at the current floor to transition to the Loading state
-//     for (auto &request : activeRequests)
-//     {
-//         int reqFloor = request.GetRequestedFloor();
-
-//         // check if the request is at the current floor and the elevator is moving in the correct direction
-//         if (reqFloor == currentFloor && !request.IsFloorRequestDone() && !request.IsServiced())
-//         {
-//             // Need to load the passenger onto the elevator
-//             foundRequestToLoad = true;
-//             elevatorSim.transitionToState(ELEVATOR_LOAD);
-//             break;
-//         }
-//     }
-
-//     // If no valid request at the current floor, move the elevator
-//     if (!foundRequestToLoad)
-//     {
-//         if (currentDir == EC_ELEVATOR_UP)
-//         {
-//             elevatorSim.SetCurrFloor(currentFloor + 1); // Move up
-//         }
-//         else if (currentDir == EC_ELEVATOR_DOWN)
-//         {
-//             elevatorSim.SetCurrFloor(currentFloor - 1); // Move down
-//         }
-//     }
-//     // Log the movement
-//     std::ostringstream oss;
-//     oss << "Time: " << elevatorSim.GetCurrTime()
-//         << ", Floor: " << elevatorSim.GetCurrFloor()
-//         << ", Direction: "
-//         << (currentDir == EC_ELEVATOR_UP ? "Moving UP"
-//                                          : (currentDir == EC_ELEVATOR_DOWN ? "Moving DOWN" : "STOPPED"));
-//     elevatorSim.history.push_back(oss.str());
-// }
-
-void ElevatorState::getActiveRequests()
-{
-    currentTime = elevatorSim.GetCurrTime();
-    activeRequests.clear();
-    for (const auto &request : elevatorSim.listRequests)
-    {
-        if (request.GetTime() <= currentTime && !request.IsServiced()) // check if the current request time is less than the current time that the elevator is on
-        {
-            activeRequests.push_back(request);
-        }
-    }
 }
 
 void ECElevatorSim::transitionToState(EC_ELEVATOR_MOVEMENT newState)
@@ -402,6 +231,7 @@ void ECElevatorSim::transitionToState(EC_ELEVATOR_MOVEMENT newState)
     }
 
     currentMove = newState;
+    elevator->getActiveRequests();
 }
 
 void ECElevatorSim::Simulate(int lenSim)

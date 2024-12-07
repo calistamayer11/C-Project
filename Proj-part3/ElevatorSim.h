@@ -11,6 +11,7 @@
 #include <vector>
 #include <map>
 #include <string>
+#include <functional>
 
 //*****************************************************************************
 // DON'T CHANGE THIS CLASS
@@ -30,6 +31,8 @@
 // (a) maintenance start: floorSrc=floorDest=-1; put elevator into maintenance
 // starting at the specified time; elevator starts at the current floor
 // (b) maintenance end: floorSrc=floorDest=0; put elevator back to operation (from the current floor)
+class ECElevatorSim;
+class ElevatorState;
 
 class ECElevatorSimRequest
 {
@@ -104,47 +107,6 @@ typedef enum
 } EC_ELEVATOR_MOVEMENT;
 //*****************************************************************************
 // Add your own classes here...
-class ECElevatorSim;
-
-class ElevatorState
-{
-
-protected:
-    ECElevatorSim &elevatorSim; // ref to main simulator
-
-public:
-    ElevatorState(ECElevatorSim &elevatorSim) : elevatorSim(elevatorSim) {}
-    virtual ~ElevatorState() = default;
-    std::vector<ECElevatorSimRequest> activeRequests;
-    virtual void onTimeTick() = 0;
-    void getActiveRequests();
-    ElevatorState *elevator;
-
-private:
-    std::vector<ECElevatorSimRequest> listRequests;
-    int currentTime;
-};
-class Stopped : public ElevatorState
-{
-public:
-    Stopped(ECElevatorSim &elevatorSim) : ElevatorState(elevatorSim) {}
-    void onTimeTick() override;
-};
-class Moving : public ElevatorState
-{
-public:
-    Moving(ECElevatorSim &elevatorSim) : ElevatorState(elevatorSim) {}
-    void onTimeTick();
-};
-class Loading : public ElevatorState
-{
-public:
-    Loading(ECElevatorSim &elevatorSim) : ElevatorState(elevatorSim) {}
-    void onTimeTick();
-};
-//*****************************************************************************
-// Simulation of elevator
-
 class ECElevatorSim
 {
     friend class ElevatorState;
@@ -200,6 +162,62 @@ private:
     int currentFloor;
     EC_ELEVATOR_DIR currentDirection;
     void onTimeTick();
+    void getActiveRequests(); // Update active requests
+    std::vector<std::reference_wrapper<ECElevatorSimRequest>> activeRequests;
 };
+
+class ElevatorState
+{
+
+protected:
+    ECElevatorSim &elevatorSim; // ref to main simulator
+    std::vector<std::reference_wrapper<ECElevatorSimRequest>> activeRequests;
+
+public:
+    ElevatorState(ECElevatorSim &elevatorSim) : elevatorSim(elevatorSim) {}
+    virtual ~ElevatorState() = default;
+    virtual void onTimeTick() = 0;
+    const std::vector<std::reference_wrapper<ECElevatorSimRequest>> &getActiveRequests() const
+    {
+        return activeRequests;
+    }
+    void getActiveRequests()
+    {
+        activeRequests.clear();
+        for (auto &request : elevatorSim.listRequests)
+        {
+            if (request.GetTime() <= elevatorSim.GetCurrTime() && !request.IsServiced())
+            {
+                activeRequests.push_back(std::ref(request));
+            }
+        }
+    }
+
+    ElevatorState *elevator;
+
+private:
+    std::vector<ECElevatorSimRequest> listRequests;
+    int currentTime;
+};
+class Stopped : public ElevatorState
+{
+public:
+    Stopped(ECElevatorSim &elevatorSim) : ElevatorState(elevatorSim) {}
+    void onTimeTick() override;
+};
+class Moving : public ElevatorState
+{
+public:
+    Moving(ECElevatorSim &elevatorSim) : ElevatorState(elevatorSim) {}
+    void onTimeTick();
+};
+class Loading : public ElevatorState
+{
+public:
+    Loading(ECElevatorSim &elevatorSim) : ElevatorState(elevatorSim) {}
+    void onTimeTick();
+};
+//*****************************************************************************
+// Simulation of elevator
 
 #endif /* ECElevatorSim_h */
