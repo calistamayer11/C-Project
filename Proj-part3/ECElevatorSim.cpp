@@ -5,7 +5,9 @@
 // //  Created by Yufeng Wu on 6/27/23.
 // //  Elevator simulation
 
-#include "ElevatorSim.h"
+#include "ECElevatorSim.h"
+#include "ECGraphicViewImp.h"
+#include "ECSimpleGraphicObserver.h"
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -71,7 +73,7 @@ void Stopped::onTimeTick()
             << ", Dest: " << req.GetFloorDest() << "] ";
     }
 
-    elevatorSim.history.push_back(oss.str());
+    elevatorSim.LogEvent(oss.str());
 
     int closestFloor = -1;
     EC_ELEVATOR_DIR move = EC_ELEVATOR_STOPPED;
@@ -118,7 +120,7 @@ void Loading::onTimeTick()
             std::ostringstream oss;
             oss << "Passenger boards at floor " << elevatorSim.GetCurrFloor()
                 << " - Request Src: " << req.GetFloorSrc() << ", Dest: " << req.GetFloorDest();
-            elevatorSim.history.push_back(oss.str());
+            elevatorSim.LogEvent(oss.str());
 
             // Determine the next target floor and direction
             int targetFloor = req.GetRequestedFloor();
@@ -142,7 +144,7 @@ void Loading::onTimeTick()
             oss << "Passenger exits at floor " << elevatorSim.GetCurrFloor()
                 << " - Request Src: " << req.GetFloorSrc() << ", Dest: " << req.GetFloorDest()
                 << ", Time: " << elevatorSim.GetCurrTime() << ", Floor: " << elevatorSim.GetCurrFloor();
-            elevatorSim.history.push_back(oss.str());
+            elevatorSim.LogEvent(oss.str());
 
             // Transition to moving state
             int targetFloor = req.GetRequestedFloor();
@@ -174,25 +176,37 @@ void Moving::onTimeTick()
         int requestedFloor = req.GetRequestedFloor();
 
         // If the request is at the current floor and not yet boarded, transition to loading state
-        if (requestedFloor == currentFloor && !req.IsFloorRequestDone())
+        if (requestedFloor == currentFloor)
         {
             elevatorSim.transitionToState(ELEVATOR_LOAD);
             transitionToLoading = true;
-            break; // Exit the loop once a request is processed
+            break;
         }
     }
 
     // If no request was processed, continue moving the elevator
     if (!transitionToLoading)
     {
+        // Move the elevator up or down based on direction
         if (currentDir == EC_ELEVATOR_UP)
         {
-            elevatorSim.SetCurrFloor(currentFloor + 1); // Move up
+            currentFloor += 1;
         }
         else if (currentDir == EC_ELEVATOR_DOWN)
         {
-            elevatorSim.SetCurrFloor(currentFloor - 1); // Move down
+            currentFloor -= 1;
         }
+
+        if (currentFloor < 1)
+        {
+            currentFloor = 1; // Prevent moving below floor 1
+        }
+        else if (currentFloor > elevatorSim.GetNumFloors())
+        {
+            currentFloor = elevatorSim.GetNumFloors(); // Prevent moving above max floor
+        }
+
+        elevatorSim.SetCurrFloor(currentFloor);
     }
 
     // Log the elevator's state (time, floor, direction)
@@ -200,7 +214,7 @@ void Moving::onTimeTick()
     oss << "Time: " << elevatorSim.GetCurrTime()
         << ", Floor: " << elevatorSim.GetCurrFloor()
         << ", Direction: " << (currentDir == EC_ELEVATOR_UP ? "Moving UP" : (currentDir == EC_ELEVATOR_DOWN ? "Moving DOWN" : "STOPPED"));
-    elevatorSim.history.push_back(oss.str());
+    elevatorSim.LogEvent(oss.str());
 }
 
 void ECElevatorSim::transitionToState(EC_ELEVATOR_MOVEMENT newState)
@@ -260,7 +274,6 @@ int main(int argc, char *argv[])
 
     // Read the first line: number of floors and number of simulation steps
     int numFloors, simLength;
-    // Skip lines that start with a '#'
     std::string line;
     while (std::getline(infile, line))
     {
@@ -290,7 +303,6 @@ int main(int argc, char *argv[])
         int time, srcFloor, destFloor;
         if (iss >> time >> srcFloor >> destFloor)
         {
-            // Create a new request object and add it to the list
             listRequests.emplace_back(time, srcFloor, destFloor);
         }
         else
@@ -303,12 +315,14 @@ int main(int argc, char *argv[])
     ECElevatorSim elevatorSim(numFloors, listRequests);
     elevatorSim.Simulate(simLength);
 
-    // Output simulation history or current state
-    const auto &history = elevatorSim.GetHistory();
-    for (const auto &entry : history)
-    {
-        std::cout << entry << std::endl;
-    }
+    // Create the graphical view
+    ECGraphicViewImp view(600, 900); // Create or pass your view object here
+
+    // Create the graphic observer and pass the view and simulation object
+    ECSimpleGraphicObserver graphicObserver(view, elevatorSim);
+    view.Attach(&graphicObserver);
+    // Now that the history is filled, process it and start showing the simulation
+    view.Show(); // Let the view run the event loop and display the simulation
 
     return 0;
 }

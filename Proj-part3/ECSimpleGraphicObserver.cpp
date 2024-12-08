@@ -1,87 +1,105 @@
 #include "ECSimpleGraphicObserver.h"
-
-ECSimpleGraphicObserver::ECSimpleGraphicObserver(ECGraphicViewImp &viewIn)
-    : view(viewIn), elevatorX(200), elevatorY(750), currentFloor(1), targetFloor(1),
-      floorHeight(100), isMoving(false), isMovingUp(false), tickCount(0), ticksPerFloor(10)
+#include "ECElevatorSim.h"
+// compile with:  g++ ECGraphicViewImp.cpp ECElevatorSim.cpp ECSimpleGraphicObserver.cpp $(pkg-config allegro-5 allegro_main-5 allegro_font-5 allegro_primitives-5 allegro_image-5 allegro_ttf-5 --libs --cflags) -o ElevatorSim -std=c++17
+ECSimpleGraphicObserver::ECSimpleGraphicObserver(ECGraphicViewImp &viewIn, ECElevatorSim &elevatorSimIn)
+    : view(viewIn), elevatorSim(elevatorSimIn), signalLights(elevatorSim.GetNumFloors(), false), lightStates(elevatorSim.GetNumFloors(), false)
 {
-    // Initialize passenger data or other observer-specific setup if needed ??
-}
+    int floorHeight = 120; // Height per floor
+    floorHeights.resize(elevatorSim.GetNumFloors());
 
+    for (int i = 0; i < elevatorSim.GetNumFloors(); ++i)
+    {
+        floorHeights[i] = (i * (floorHeight)); // Starting Y-position for each floor
+    }
+
+    // Draw the floors immediately after initialization
+    const int floorWidth = 400; // Width of each floor
+    for (int i = 0; i < elevatorSim.GetNumFloors(); ++i)
+    {
+        view.DrawRectangle(20, floorHeights[i], floorWidth, floorHeights[i] + floorHeight, 3, ECGV_BLACK);
+    }
+}
 void ECSimpleGraphicObserver::Update()
 {
-    // Check the current event from the graphic view
-    ECGVEventType eventType = view.GetCurrEvent();
-
-    if (eventType == ECGV_EV_TIMER)
+    static size_t currentHistoryIndex = 0; // Keeps track of the current event in the history vector
+    const int floorWidth = 400;            // Width of each floor
+    int floorHeight = 120;                 // Height of each floor
+    for (int i = 0; i < elevatorSim.GetNumFloors(); ++i)
     {
-        // Timer tick event: move the elevator if it's moving
-        if (isMoving)
+        view.DrawRectangle(20, floorHeights[i], floorWidth, floorHeights[i] + floorHeight, 3);
+    }
+    // Ensure there are events to process
+    if (currentHistoryIndex < elevatorSim.GetHistory().size())
+    {
+        // Retrieve the current event from history
+        std::string currentEvent = elevatorSim.GetHistory()[currentHistoryIndex];
+
+        std::cout << currentEvent << std::endl;
+        // Define constants for drawing
+        const int passengerWidth = 15;
+        const int passengerHeight = 30;
+        const int passengerOffsetX = 460; // Position for passengers outside the elevator
+
+        // If the event is related to floor movement (up/down)
+        if (currentEvent.find("Moving UP") != std::string::npos)
         {
-            MoveElevator();       // Update the position
-            view.SetRedraw(true); // Request a redraw
+            // Move the elevator and render the new floor position
+            elevatorY -= elevatorSpeed;
+            if (elevatorY <= floorHeights[0])
+            {
+                elevatorY = floorHeights[0];
+            }
+            view.DrawFilledRectangle(elevatorX, elevatorY, elevatorX + elevatorWidth, elevatorY + elevatorHeight, ECGV_CYAN);
+            view.SetRedraw(true);
         }
-    }
-}
-
-void ECSimpleGraphicObserver::MoveElevator()
-{
-    // Determine the direction of movement
-    if (currentFloor < targetFloor)
-    {
-        isMovingUp = true;
-    }
-    else if (currentFloor > targetFloor)
-    {
-        isMovingUp = false;
-    }
-    else
-    {
-        // Reached target floor
-        isMoving = false;
-        return;
-    }
-
-    // Increment position gradually
-    if (isMovingUp)
-    {
-        elevatorY -= floorHeight / ticksPerFloor; // Move up in small increments
-    }
-    else
-    {
-        elevatorY += floorHeight / ticksPerFloor; // Move down in small increments
-    }
-
-    // Track ticks and update floor when enough ticks have passed
-    tickCount++;
-    if (tickCount >= ticksPerFloor)
-    {
-        tickCount = 0;
-        currentFloor += (isMovingUp ? 1 : -1);
-
-        // Stop moving if we've reached the target floor
-        if (currentFloor == targetFloor)
+        else if (currentEvent.find("Moving DOWN") != std::string::npos)
         {
-            isMoving = false;
+            elevatorY += elevatorSpeed;
+            if (elevatorY >= floorHeights[elevatorSim.GetNumFloors() - 1])
+            {
+                elevatorY = floorHeights[elevatorSim.GetNumFloors() - 1];
+            }
+            view.DrawFilledRectangle(elevatorX, elevatorY, elevatorX + elevatorWidth, elevatorY + elevatorHeight, ECGV_CYAN);
+            view.SetRedraw(true);
         }
-    }
-}
 
-void ECSimpleGraphicObserver::DrawElevator()
-{
-    // Example elevator drawing logic
-    int elevatorWidth = 100;
-    int elevatorHeight = 80;
-    view.DrawFilledRectangle(elevatorX, elevatorY, elevatorX + elevatorWidth,
-                             elevatorY + elevatorHeight, ECGV_BLUE);
-}
-
-void ECSimpleGraphicObserver::DrawPassengers()
-{
-    for (const Passenger &p : passengers)
-    {
-        if (p.isVisible)
+        // Handle passenger boarding or exiting
+        if (currentEvent.find("boards") != std::string::npos)
         {
-            view.DrawFilledCircle(p.x, p.y, 10, ECGV_GREEN); // Draw passengers as green circles
+            int boardingFloor = std::stoi(currentEvent.substr(currentEvent.find("floor ") + 6, 1));
+            for (auto &passenger : passengers)
+            {
+                if (passenger.floorIndex == boardingFloor && !passenger.isOnElevator)
+                {
+                    passenger.isOnElevator = true;
+                    passenger.x = elevatorX + 10;
+                    passenger.y = floorHeights[boardingFloor] + (floorHeight / 2) - (passengerHeight / 2);
+                    view.DrawRectangle(passenger.x, passenger.y, passenger.x + passengerWidth, passenger.y + passengerHeight, 3);
+                    view.DrawEllipse(passenger.x + passengerWidth / 2, passenger.y - passengerHeight / 2, passengerWidth / 2, passengerWidth / 2, 3);
+                    view.SetRedraw(true);
+                    break;
+                }
+            }
         }
+
+        if (currentEvent.find("exits") != std::string::npos)
+        {
+            int exitFloor = std::stoi(currentEvent.substr(currentEvent.find("floor ") + 6, 1));
+            for (auto &passenger : passengers)
+            {
+                if (passenger.isOnElevator && passenger.floorIndex == exitFloor)
+                {
+                    passenger.isOnElevator = false;
+                    passenger.x = -100;
+                    passenger.y = -100;
+                    view.SetRedraw(true);
+                    break;
+                }
+            }
+        }
+
+        // Increment history index and redraw
+        currentHistoryIndex++;
+        view.SetRedraw(true);
     }
 }

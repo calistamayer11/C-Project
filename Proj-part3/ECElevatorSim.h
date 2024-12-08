@@ -1,7 +1,7 @@
 //  Elevator simulation header file for part 3
 
-#ifndef ElevatorSim_h
-#define ElevatorSim_h
+#ifndef ECElevatorSim_h
+#define ECElevatorSim_h
 
 // #include "ECGraphicViewImp.h"
 // #include "Frontend.h"
@@ -150,6 +150,10 @@ public:
 
     // transition function
     void transitionToState(EC_ELEVATOR_MOVEMENT newState);
+    void LogEvent(const std::string &event)
+    {
+        history.push_back(event);
+    }
     std::vector<std::string> history; // Stores the history of states
     const std::vector<std::string> &GetHistory() const { return history; }
 
