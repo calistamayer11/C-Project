@@ -30,20 +30,23 @@ private:
     ECGraphicViewImp &view;     // Reference to the graphical view
     ECElevatorSim &elevatorSim; // Reference to the elevator simulation
     // Elevator rendering properties
-    int elevatorX, elevatorY; // Elevator's current position
-    int elevatorWidth = 50;   // Width of the elevator
-    int elevatorHeight = 50;  // Height of the elevator
-    int elevatorSpeed = 3;    // Speed of the elevator movement
-    int currentFloor = 1;     // Current floor the elevator is at
-    bool isMoving = false;    // Whether the elevator is moving
-    bool isMovingUp = false;  // Direction of movement
+    int elevatorX, elevatorY;  // Elevator's current position
+    int elevatorWidth = 50;    // Width of the elevator
+    int elevatorHeight = 50;   // Height of the elevator
+    int elevatorSpeed = 3;     // Speed of the elevator movement
+    int currentFloor;          // Current floor the elevator is at
+    bool isMovingDown = false; // Whether the elevator is moving
+    bool isMovingUp = false;   // Direction of movement
 
     // UI rendering properties
     int floorHeight = 150; // Height of each floor
-    int floorSpacing = 20; // Spacing between floors in the UI
-    int minY = 20;         // Minimum Y position
-    int maxY = 790;        // Maximum Y position
-
+    // int floorSpacing = 20; // Spacing between floors in the UI
+    int minY = 20;  // Minimum Y position
+    int maxY = 790; // Maximum Y position
+    // int topLeftX = 20, topLeftY = 770;
+    // int bottomRightX = 400, bottomRightY = 920;
+    int topLeftX, topLeftY, bottomRightX, bottomRightY;
+    int stepSize = 5;
     // Dynamic Floor Heights
     std::vector<int> floorHeights; // Store Y positions of floors dynamically
 

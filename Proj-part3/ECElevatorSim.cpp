@@ -67,6 +67,9 @@ void Stopped::onTimeTick()
     {
         // Dereference the request to access the actual object
         ECElevatorSimRequest &req = request.get();
+        std::ostringstream oss;
+        oss << "Passenger waiting at floor " << req.GetFloorSrc() << " for floor " << req.GetFloorDest() << " at time " << elevatorSim.GetCurrTime();
+        elevatorSim.LogEvent(oss.str());
 
         // Now you can access and modify `req` directly
         oss << "[Src: " << req.GetFloorSrc()
@@ -118,7 +121,10 @@ void Loading::onTimeTick()
 
             // Log the boarding event
             std::ostringstream oss;
-            oss << "Passenger boards at floor " << elevatorSim.GetCurrFloor()
+            oss << "Time: " << elevatorSim.GetCurrTime()
+                << ", Floor: " << elevatorSim.GetCurrFloor()
+                << ", State: LOADING"
+                << "boards at floor " << elevatorSim.GetCurrFloor()
                 << " - Request Src: " << req.GetFloorSrc() << ", Dest: " << req.GetFloorDest();
             elevatorSim.LogEvent(oss.str());
 
@@ -141,9 +147,11 @@ void Loading::onTimeTick()
 
             // Log the exiting event
             std::ostringstream oss;
-            oss << "Passenger exits at floor " << elevatorSim.GetCurrFloor()
-                << " - Request Src: " << req.GetFloorSrc() << ", Dest: " << req.GetFloorDest()
-                << ", Time: " << elevatorSim.GetCurrTime() << ", Floor: " << elevatorSim.GetCurrFloor();
+            oss << "Time: " << elevatorSim.GetCurrTime()
+                << ", Floor: " << elevatorSim.GetCurrFloor()
+                << ", State: LOADING"
+                << "exits at floor " << elevatorSim.GetCurrFloor()
+                << " - Request Src: " << req.GetFloorSrc() << ", Dest: " << req.GetFloorDest();
             elevatorSim.LogEvent(oss.str());
 
             // Transition to moving state
@@ -191,19 +199,26 @@ void Moving::onTimeTick()
         if (currentDir == EC_ELEVATOR_UP)
         {
             currentFloor += 1;
+            elevatorSim.SetCurrFloor(currentFloor);
         }
         else if (currentDir == EC_ELEVATOR_DOWN)
         {
             currentFloor -= 1;
         }
-
+        if (currentFloor == 1)
+        {
+            elevatorSim.SetCurrDir(EC_ELEVATOR_STOPPED);  // Stop the elevator
+            elevatorSim.transitionToState(ELEVATOR_STOP); // Transition to stopped state
+        }
         if (currentFloor < 1)
         {
             currentFloor = 1; // Prevent moving below floor 1
         }
         else if (currentFloor > elevatorSim.GetNumFloors())
         {
-            currentFloor = elevatorSim.GetNumFloors(); // Prevent moving above max floor
+            currentFloor = elevatorSim.GetNumFloors();   // Prevent moving above max floor
+            elevatorSim.SetCurrDir(EC_ELEVATOR_STOPPED); // Stop the elevator
+            elevatorSim.transitionToState(ELEVATOR_STOP);
         }
 
         elevatorSim.SetCurrFloor(currentFloor);
